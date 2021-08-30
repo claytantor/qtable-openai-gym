@@ -28,7 +28,10 @@ if is_ipython:
 plt.ion()
 
 # if gpu is to be used
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# print(torch.cuda.get_device_name(0), torch.cuda.is_available())
+
+device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
 
 Transition = namedtuple('Transition',
@@ -93,26 +96,6 @@ def get_screen():
     # Returned screen requested by gym is 400x600x3, but is sometimes larger
     # such as 800x1200x3. Transpose it into torch order (CHW).
     screen = env.render(mode='rgb_array').transpose((2, 0, 1))
-    # Cart is in the lower half, so strip off the top and bottom of the screen
-    # _, screen_height, screen_width = screen.shape
-    # screen = screen[:, int(screen_height*0.4):int(screen_height * 0.8)]
-
-
-    # view_width = int(screen_width * 0.6)
-
-    # cart_location = get_cart_location(screen_width)
-
-
-    # if cart_location < view_width // 2:
-    #     slice_range = slice(view_width)
-    # elif cart_location > (screen_width - view_width // 2):
-    #     slice_range = slice(-view_width, None)
-    # else:
-    #     slice_range = slice(cart_location - view_width // 2,
-    #                         cart_location + view_width // 2)
-
-    # Strip off the edges, so that we have a square image centered on a cart
-    # screen = screen[:, :, slice_range]
     # Convert to float, rescale, convert to torch tensor
     # (this doesn't require a copy)
     screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
@@ -123,11 +106,6 @@ def get_screen():
 
 # Reset the environment before begining
 env.reset()
-# plt.figure()
-# plt.imshow(get_screen().cpu().squeeze(0).permute(1, 2, 0).numpy(),
-#            interpolation='none')
-# plt.title('Example extracted screen')
-# plt.show()
 
 BATCH_SIZE = 128
 GAMMA = 0.999
@@ -157,6 +135,9 @@ def select_action_random(state):
     return action
 
 def select_action_drl(state):
+    # n_actions_b = env.action_space.n
+    # print(n_actions_b)
+
     global steps_done
     sample = random.random()
     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
@@ -169,12 +150,20 @@ def select_action_drl(state):
             # found, so we pick action with the larger expected reward.
             return policy_net(state).max(1)[1].view(1, 1)
     else:
-        return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
+        # print(device)
+        if(str(device)=='cuda'):
+            # print('cuda', n_actions_b)
+            return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long).cuda()
+        
+        if(str(device)=='cpu'):
+            # print('cpu select actions', n_actions_b)        
+            return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long).cpu()
 
 
 def optimize_model():
     if len(memory) < BATCH_SIZE:
         return
+
     transitions = memory.sample(BATCH_SIZE)
     # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
     # detailed explanation). This converts batch-array of Transitions
@@ -202,7 +191,17 @@ def optimize_model():
     # This is merged based on the mask, such that we'll have either the expected
     # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+
+    # print(target_net(non_final_next_states).max(1)[0], str(device)=='cuda')
+    # next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+
+    if(str(device)=='cuda'):
+        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach().cuda()
+    
+    if(str(device)=='cpu'):      
+        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+
+
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
@@ -217,37 +216,40 @@ def optimize_model():
     optimizer.step()
 
 episode_durations = []
+episode_scores = []
 
 def moving_average(x, w):
     return np.convolve(x, np.ones(w), 'valid') / w
 
-def plot_durations():
+
+def plot_scores():
     plt.figure(2)
     plt.clf()
-    durations_t = torch.tensor(episode_durations, dtype=torch.float)
+    scores_t = torch.tensor(episode_scores, dtype=torch.float)
     plt.title('Training...')
     plt.xlabel('Episode')
-    plt.ylabel('Duration')
-    plt.plot(durations_t.numpy())
-    plt.plot(moving_average(episode_durations,6))
+    plt.ylabel('Score')
+    plt.plot(scores_t.numpy())
+    plt.plot(moving_average(episode_scores,6))
     # Take 100 episode averages and plot them too
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
+    if len(scores_t) >= 100:
+        means = scores_t.unfold(0, 100, 1).mean(1).view(-1)
         means = torch.cat((torch.zeros(99), means))
         plt.plot(means.numpy())
 
     plt.pause(0.001)  # pause a bit so that plots are updated
     if is_ipython:
         display.clear_output(wait=True)
-        display.display(plt.gcf())
+        display.display(plt.gcf())      
 
 def loop_test1(argv):
     try:
         print("starting qlearning app.")
-        num_episodes = 50000
+        num_episodes = 10000
         for i_episode in range(num_episodes):
-            # print("episode", i_episode)
             env.reset()
+
+
             last_screen = get_screen()
             current_screen = get_screen()
             state = current_screen - last_screen
@@ -255,16 +257,14 @@ def loop_test1(argv):
             for t in count():
                 env.render()
                 # Select and perform an action
-                # action = select_action(state)
                 action = select_action_drl(state)
+                # print("action", action)
 
-                # _, reward, done, _ = env.step(action.item())
-                _, reward, done, _ = env.step(action)
+                _, reward, done, _ = env.step(action.item())
 
                 reward = torch.tensor([reward], device=device)
-                score += reward[0].data.cpu().numpy()
+                score += reward.data[0]
                 
-
                 # Observe new state
                 last_screen = current_screen
                 current_screen = get_screen()
@@ -282,14 +282,18 @@ def loop_test1(argv):
                 # # Perform one step of the optimization (on the target network)
                 optimize_model()
                 if done:
-                    episode_durations.append(t + 1)
-                    # if(score>0.0):
-                    #     print("episode:{} score: {} time: {}".format(i_episode, score, t))
-                    # else:
-                    #     print("episode:{} score: {} time: {}".format(i_episode, score, t))
+                    # episode_durations.append(t + 1)
+                    episode_scores.append(score)
                     print("episode:{} score: {} time: {}".format(i_episode, score, t))
                     # plot_durations()
+                    # plot_scores()
                     break
+                # else:
+                #     plt.figure(3)
+                #     plt.imshow(last_screen.cpu().squeeze(0).permute(1, 2, 0).numpy(),
+                #             interpolation='none')
+                #     plt.title('extracted screen')
+                #     # plt.show()
 
             # Update the target network, copying all weights and biases in DQN
             if i_episode % TARGET_UPDATE == 0:
@@ -302,32 +306,32 @@ def loop_test1(argv):
 
     print('Complete')
 
-def loop_random(argv):
+# def loop_random(argv):
 
-    # training loop
-    score = 0
+#     # training loop
+#     score = 0
 
-    # Requires 100 episodes for evaluation
-    for i_episodes in range(100):
-        # Reset the environment for the current episode
-        observation = env.reset()
-        # Set up a loop to perform 1000 steps
-        for t in range(100):
-            env.render()
-            # Step returns 4 values: observation (object)
-            #            reward (float)
-            #			 done (boolean)
-            # 			 info (dictionary)
-            # print(observation)
-            action = env.action_space.sample() # take a random action
+#     # Requires 100 episodes for evaluation
+#     for i_episodes in range(100):
+#         # Reset the environment for the current episode
+#         observation = env.reset()
+#         # Set up a loop to perform 1000 steps
+#         for t in range(100):
+#             env.render()
+#             # Step returns 4 values: observation (object)
+#             #            reward (float)
+#             #			 done (boolean)
+#             # 			 info (dictionary)
+#             # print(observation)
+#             action = env.action_space.sample() # take a random action
     
-            print("action: {}".format(action))
-            observation, reward, done, info = env.step(action)
-            score += reward
-            print(score)
-            if done:
-                print("Episode finished after {} timepsteps. score: {}".format(t+1, score))
-                break
+#             print("action: {}".format(action))
+#             observation, reward, done, info = env.step(action)
+#             score += reward
+#             print(score)
+#             if done:
+#                 print("Episode finished after {} timepsteps. score: {}".format(t+1, score))
+#                 break
 
 
 

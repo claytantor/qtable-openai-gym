@@ -342,6 +342,9 @@ steps_done = 0
 
 
 def select_action(state):
+    # n_actions_b = env.action_space.n
+    # print(n_actions_b)
+
     global steps_done
     sample = random.random()
     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
@@ -432,7 +435,10 @@ def optimize_model():
     # This is merged based on the mask, such that we'll have either the expected
     # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
+    
+    # print(target_net(non_final_next_states).max(1)[0])
     next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
+
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
@@ -462,7 +468,7 @@ def main(argv):
     
     try:
         print("starting qlearning app.")
-        num_episodes = 50
+        num_episodes = 5000
         for i_episode in range(num_episodes):
             print("i_episode", i_episode)
             # Initialize the environment and state
@@ -473,6 +479,7 @@ def main(argv):
             for t in count():
                 # Select and perform an action
                 action = select_action(state)
+                print("action", action)
                 _, reward, done, _ = env.step(action.item())
                 reward = torch.tensor([reward], device=device)
 
