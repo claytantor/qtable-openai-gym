@@ -111,3 +111,6 @@ keys/*
 log
 log/*
 ._a2c_quantstats.html
+data/
+models/
+
