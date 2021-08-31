@@ -1,7 +1,7 @@
-torch==1.7.0
-torchvision==0.8.1
 gym==0.17.3
 matplotlib==3.3.3
 atari-py==0.2.6
 stable-baselines3[extra]
-
+gym_anytrading
+QuantStats==0.0.34
+optuna
