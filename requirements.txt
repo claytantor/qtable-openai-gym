@@ -5,3 +5,6 @@ stable-baselines3[extra]
 gym_anytrading
 QuantStats==0.0.34
 optuna
+psycopg2==2.9.1
+psycopg2-binary==2.9.1
+

@@ -21,6 +21,9 @@ from stable_baselines3.common.results_plotter import load_results, ts2xy, plot_r
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.callbacks import BaseCallback
 
+
+
+
 def load_dataset(name, index_name):
     path = os.path.join('/workspace/data', name + '.csv')
     df = pd.read_csv(path, parse_dates=True, index_col=index_name)
@@ -44,8 +47,6 @@ def linear_schedule(initial_value: float) -> Callable[[float], float]:
         return progress_remaining * initial_value
 
     return func
-
-
 
 
 def main(argv):
