@@ -8,8 +8,9 @@ import quantstats as qs
 import optuna
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import matplotlib.pyplot as plt
-from datetime import datetime
 
+from datetime import datetime
+from utils import load_dataset
 
 from stable_baselines3 import A2C
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
@@ -26,14 +27,53 @@ from dotenv import load_dotenv, dotenv_values
 load_dotenv()  # take environment variables from .env.
 
 
-
 t_id = datetime.now().strftime('%Y%m%d_%H%M%S')
 
 
-def load_dataset(name, index_name):
-    path = os.path.join('/workspace/data', name + '.csv')
-    df = pd.read_csv(path, parse_dates=True, index_col=index_name)
-    return df
+def get_untuned_config():
+    return {
+        **dotenv_values(f"/workspace/config/.env"),  # load shared development variables
+        **os.environ,  # override loaded values with environment variables
+    }
+
+def update_config_values_untuned(config):
+
+    """
+    set basic param values, tuned params will overwrite
+    learning_rate=0.0007|0.0008
+    n_steps=8|10
+    gae_lambda=0.9|1.0
+    vf_coef=0.44|0.46
+    total_timesteps=908511|1508511
+    gamma=0.9|1.0
+    """
+
+    config['learning_rate'] = float(config['learning_rate'])
+    config['gamma'] = float(config['gamma'])
+    config['n_steps'] = int(config['n_steps']) 
+
+    config['vf_coef'] = float(config['vf_coef'])
+    config['gae_lambda'] = float(config['gae_lambda'])
+    config['total_timesteps'] = int(float(config['total_timesteps']))
+
+
+
+def update_config_values_shared(config):
+
+    """
+    set basic param values, tuned params will overwrite
+    """
+
+    config['use_rms_prop'] = int(config['use_rms_prop'])
+    config['sde_sample_freq'] = int(config['sde_sample_freq'])
+    config['verbose'] = int(config['verbose'])
+    config['training_id'] = f'{t_id}_0'
+    config['use_rms_prop'] = (config['use_rms_prop'] == 1)
+    config['use_schedule'] = (config['use_schedule']=='True')
+    config['learn_eval_freq'] = int(config['learn_eval_freq'])
+    config['n_eval_episodes'] = int(config['n_eval_episodes'])
+
+
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
@@ -58,12 +98,6 @@ def get_tuned_config():
     return {
         **dotenv_values(f"/workspace/config/.env"),  # load shared development variables
         **dotenv_values(f"/workspace/config/.env.tuned"),
-        **os.environ,  # override loaded values with environment variables
-    }
-
-def get_untuned_config():
-    return {
-        **dotenv_values(f"/workspace/config/.env"),  # load shared development variables
         **os.environ,  # override loaded values with environment variables
     }
 
@@ -115,44 +149,42 @@ def config_int_field(field_name, config, trial):
     config[field_name] = trial.suggest_int(field_name, 
         int(float(f_parts[0])), int(float(f_parts[1])))
 
-def update_config_values_untuned(config):
+# def update_config_values_untuned(config):
 
-    """
-    set basic param values, tuned params will overwrite
-    learning_rate=0.0007|0.0008
-    n_steps=8|10
-    gae_lambda=0.9|1.0
-    vf_coef=0.44|0.46
-    total_timesteps=908511|1508511
-    gamma=0.9|1.0
-    """
+#     """
+#     set basic param values, tuned params will overwrite
+#     learning_rate=0.0007|0.0008
+#     n_steps=8|10
+#     gae_lambda=0.9|1.0
+#     vf_coef=0.44|0.46
+#     total_timesteps=908511|1508511
+#     gamma=0.9|1.0
+#     """
 
-    config['learning_rate'] = float(config['learning_rate'])
-    config['gamma'] = float(config['gamma'])
-    config['n_steps'] = int(config['n_steps']) 
+#     config['learning_rate'] = float(config['learning_rate'])
+#     config['gamma'] = float(config['gamma'])
+#     config['n_steps'] = int(config['n_steps']) 
 
-    config['vf_coef'] = float(config['vf_coef'])
-    config['gae_lambda'] = float(config['gae_lambda'])
-    config['total_timesteps'] = int(float(config['total_timesteps']))
-
-
-
-def update_config_values_shared(config):
-
-    """
-    set basic param values, tuned params will overwrite
-    """
-
-    config['use_rms_prop'] = int(config['use_rms_prop'])
-    config['sde_sample_freq'] = int(config['sde_sample_freq'])
-    config['verbose'] = int(config['verbose'])
-    config['training_id'] = f'{t_id}_0'
-    config['use_rms_prop'] = (config['use_rms_prop'] == 1)
-    config['use_schedule'] = (config['use_schedule']=='True')
-    config['learn_eval_freq'] = int(config['learn_eval_freq'])
-    config['n_eval_episodes'] = int(config['n_eval_episodes'])
+#     config['vf_coef'] = float(config['vf_coef'])
+#     config['gae_lambda'] = float(config['gae_lambda'])
+#     config['total_timesteps'] = int(float(config['total_timesteps']))
 
 
+
+# def update_config_values_shared(config):
+
+#     """
+#     set basic param values, tuned params will overwrite
+#     """
+
+#     config['use_rms_prop'] = int(config['use_rms_prop'])
+#     config['sde_sample_freq'] = int(config['sde_sample_freq'])
+#     config['verbose'] = int(config['verbose'])
+#     config['training_id'] = f'{t_id}_0'
+#     config['use_rms_prop'] = (config['use_rms_prop'] == 1)
+#     config['use_schedule'] = (config['use_schedule']=='True')
+#     config['learn_eval_freq'] = int(config['learn_eval_freq'])
+#     config['n_eval_episodes'] = int(config['n_eval_episodes'])
 
 def train_optimized(trial):
     
